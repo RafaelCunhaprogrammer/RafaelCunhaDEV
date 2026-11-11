@@ -6,18 +6,23 @@ export type Orcamento =
   | { tipo: 'fechado'; valor: Centavos; detalhe: string }
   | { tipo: 'sob_orcamento'; mensagem: string }
 
-const SOB_ORCAMENTO: Orcamento = {
+const SOB_ORCAMENTO: Orcamento = Object.freeze({
   tipo: 'sob_orcamento',
   mensagem: 'A Alana avalia e te retorna com o valor.',
-}
+})
 
 /** Medida utilizável: número finito e positivo. Zero, negativo, NaN e Infinity não são. */
 function medidaValida(medida: number | undefined): medida is number {
   return typeof medida === 'number' && Number.isFinite(medida) && medida > 0
 }
 
+/** Quantidade para o cliente, em pt-BR: vírgula decimal. */
+function formatarQuantidade(quantidade: number): string {
+  return String(quantidade).replace('.', ',')
+}
+
 function plural(quantidade: number, singular: string, pluralForma: string): string {
-  return `${quantidade} ${quantidade === 1 ? singular : pluralForma}`
+  return `${formatarQuantidade(quantidade)} ${quantidade === 1 ? singular : pluralForma}`
 }
 
 /**
@@ -30,28 +35,31 @@ export function orcar(servico: Servico, medida: Medida): Orcamento {
   if (preco === null || !Number.isFinite(preco) || preco <= 0) return SOB_ORCAMENTO
 
   let quantidade: number | undefined
-  let descricaoQuantidade: string
   switch (servico.formaCobranca) {
     case 'hora':
       quantidade = medida.horas
-      descricaoQuantidade = medidaValida(quantidade) ? plural(quantidade, 'hora', 'horas') : ''
       break
     case 'm2':
       quantidade = medida.metrosQuadrados
-      descricaoQuantidade = `${String(quantidade).replace(".", ",")} m²`
       break
     case 'diaria':
       quantidade = medida.diarias
-      descricaoQuantidade = medidaValida(quantidade) ? plural(quantidade, 'diária', 'diárias') : ''
       break
     default:
       return SOB_ORCAMENTO
   }
   if (!medidaValida(quantidade)) return SOB_ORCAMENTO
 
-  return {
-    tipo: 'fechado',
-    valor: Math.round(preco * quantidade),
-    detalhe: `${descricaoQuantidade} × ${reais(preco)}`,
-  }
+  const valor = Math.round(preco * quantidade)
+  // Valor zero (medida minúscula) ou fora do inteiro seguro (medida absurda) não é orçamento.
+  if (valor <= 0 || !Number.isSafeInteger(valor)) return SOB_ORCAMENTO
+
+  const descricao =
+    servico.formaCobranca === 'hora'
+      ? plural(quantidade, 'hora', 'horas')
+      : servico.formaCobranca === 'diaria'
+        ? plural(quantidade, 'diária', 'diárias')
+        : `${formatarQuantidade(quantidade)} m²`
+
+  return { tipo: 'fechado', valor, detalhe: `${descricao} × ${reais(preco)}` }
 }

@@ -29,18 +29,25 @@ test('serviço por hora multiplica o preço base pelas horas', () => {
 test('serviço por metro quadrado arredonda para o centavo mais próximo', () => {
   // 1,27/m² sobre 120,5 m² = 153,035 -> 153,04
   const r = orcar(servicoPorM2(127), { metrosQuadrados: 120.5 })
-  expect(r.tipo).toBe('fechado')
-  expect((r as any).valor).toBe(15304)
+  expect(r).toMatchObject({ tipo: 'fechado', valor: 15304 })
 })
 
 test('serviço por diária multiplica pelo número de diárias', () => {
-  expect((orcar(servicoPorDiaria(35000), { diarias: 3 }) as any).valor).toBe(105000)
+  expect(orcar(servicoPorDiaria(35000), { diarias: 3 })).toMatchObject({ valor: 105000 })
 })
 
 test('serviço sob orçamento nunca devolve número', () => {
   const r = orcar(servicoSobOrcamento(), { metrosQuadrados: 400 })
   expect(r.tipo).toBe('sob_orcamento')
   expect(JSON.stringify(r)).not.toMatch(/\d{3,}/)
+  expect(r).toEqual({ tipo: 'sob_orcamento', mensagem: 'A Alana avalia e te retorna com o valor.' })
+  expect(r).not.toHaveProperty('valor')
+})
+
+test('serviço sob orçamento com preço cadastrado por engano ainda não devolve valor', () => {
+  const r = orcar(servico('sob_orcamento', 5000), { horas: 4, metrosQuadrados: 400 })
+  expect(r).toEqual({ tipo: 'sob_orcamento', mensagem: 'A Alana avalia e te retorna com o valor.' })
+  expect(r).not.toHaveProperty('valor')
 })
 
 test('medida ausente para a forma de cobrança cai em sob orçamento', () => {
@@ -56,7 +63,7 @@ test('medida zero, negativa ou inválida cai em sob orçamento', () => {
 
 test('só a medida exigida pela forma de cobrança conta', () => {
   const r = orcar(servicoPorHora(5000), { horas: 2, metrosQuadrados: 300, diarias: 9 })
-  expect((r as any).valor).toBe(10000)
+  expect(r).toMatchObject({ tipo: 'fechado', valor: 10000 })
   // medida de outra forma não substitui a exigida
   expect(orcar(servicoPorHora(5000), { metrosQuadrados: 300 }).tipo).toBe('sob_orcamento')
 })
@@ -65,4 +72,22 @@ test('serviço com preço cobrável mas sem preço cadastrado não inventa valor
   const r = orcar(servico('hora', null), { horas: 4 })
   expect(r.tipo).toBe('sob_orcamento')
   expect(JSON.stringify(r)).not.toMatch(/\d{3,}/)
+})
+
+test('quantidade fracionária usa vírgula decimal no detalhe', () => {
+  expect(orcar(servicoPorHora(5000), { horas: 2.5 })).toEqual({
+    tipo: 'fechado',
+    valor: 12500,
+    detalhe: '2,5 horas × R$ 50,00',
+  })
+})
+
+test('medida minúscula que arredonda para zero não orça como grátis', () => {
+  const r = orcar(servicoPorHora(5000), { horas: 0.00001 })
+  expect(r.tipo).toBe('sob_orcamento')
+  expect(r).not.toHaveProperty('valor')
+})
+
+test('medida absurda não vira valor', () => {
+  expect(orcar(servicoPorHora(5000), { horas: 1e21 }).tipo).toBe('sob_orcamento')
 })
