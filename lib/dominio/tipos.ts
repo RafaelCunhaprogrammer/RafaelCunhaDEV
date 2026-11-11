@@ -20,15 +20,30 @@ export type Servico = {
   nome: string
   descricao: string
   formaCobranca: FormaCobranca
+  duracaoEstimadaMin: number
   precoCentavos: Centavos | null // null quando sob_orcamento
   ativo: boolean
+}
+
+export type Cliente = {
+  id: string
+  nome: string
+  telefone: string
+  email: string | null
+  endereco: string
+  bairro: string
+  tipoImovel: string
+  metrosQuadrados: number | null
+  observacoes: string
+  origem: 'indicacao' | 'site' | 'instagram'
+  criadoEm: Date
 }
 
 export type Agendamento = {
   id: string
   servicoId: string
-  clienteNome: string
-  clienteContato: string
+  clienteId: string
+  clienteNovo: boolean
   bairro: string
   endereco: string
   inicio: Date
@@ -43,7 +58,10 @@ export type Agendamento = {
 export type Pagamento = {
   id: string
   agendamentoId: string
+  clienteId: string
   valorCentavos: Centavos
+  metodo: string | null
+  dataPrevista: Date
   status: 'pendente' | 'pago'
   pagoEm: Date | null
 }
@@ -51,14 +69,16 @@ export type Pagamento = {
 export type Despesa = {
   id: string
   descricao: string
+  categoria: string
+  recorrente: boolean
   valorCentavos: Centavos
-  data: Date
+  data: string // data de calendário 'YYYY-MM-DD'
 }
 
 /** Janela semanal recorrente. diaSemana: 0 = domingo ... 6 = sábado; horas "HH:mm" no FUSO. */
 export type Disponibilidade = {
   id: string
-  diaSemana: number
+  diaSemana: 0 | 1 | 2 | 3 | 4 | 5 | 6
   horaInicio: string
   horaFim: string
 }
@@ -101,5 +121,6 @@ const formatadorReais = new Intl.NumberFormat('pt-BR', {
 
 /** Formata centavos como R$ — somente na borda de apresentação. */
 export function reais(valor: Centavos): string {
-  return formatadorReais.format(valor / 100).replace(/ /g, ' ')
+  // Intl emite espaço não separável (U+00A0) em pt-BR; os testes esperam espaço comum.
+  return formatadorReais.format(valor / 100).replace(/\u00a0/g, ' ')
 }
