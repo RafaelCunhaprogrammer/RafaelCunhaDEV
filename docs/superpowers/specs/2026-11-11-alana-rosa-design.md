@@ -520,7 +520,7 @@ A marca é **"Allana Rosa — Limpeza Profissional de Alto Padrão"**: a linha d
 
 | Tarefa | Situação | O que muda |
 |---|---|---|
-| T1 tipos | completa | `FormaCobranca` perde `m2` e ganha `avaliacao` e `visita_tecnica` no lugar de `sob_orcamento`; `Servico` ganha `minimoHoras` e `exigeVisitaTecnica` |
+| T1 tipos | completa | `FormaCobranca` perde `m2` e ganha `avaliacao` e `visita_tecnica` no lugar de `sob_orcamento`; `Servico` ganha `minimoHoras` e `podeExigirEquipe` |
 | T2 orçamento | completa | mínimo de 4 horas no pacote; três saídas em vez de duas (preço fechado, avaliação, visita técnica) |
 | T4 autonomia | a fazer | visita técnica e "pode exigir equipe" entram na faixa vermelha; teto de carga em horas |
 | T6 esquema, T7 exemplo | a fazer | catálogo real como dado inicial, não inventado |
