@@ -1,6 +1,7 @@
 import { FUSO, REGRAS_PADRAO, type Bloqueio, type Disponibilidade, type Regras } from './tipos'
 import type { IntervaloComEndereco } from './agenda'
 import { CATALOGO } from './catalogo'
+import { orcar } from './orcamento'
 import { decidir, type Contexto, type Decisao, type Pedido } from './autonomia'
 
 // ---------------------------------------------------------------------------
@@ -199,17 +200,22 @@ test('estourar o teto de horas do dia é amarela, mesmo sem estourar o de servi�
   expect(d.motivo).toBe('dia_cheio')
 })
 
-test('duas diárias de 8 horas no mesmo dia são impossíveis: o teto de horas do dia é 8', () => {
+test('o teto de horas do dia é 8, e um serviço curto antes já impede a diária', () => {
+  // É isto que torna duas diárias de 8 horas num dia impossíveis (seção 14.3,
+  // item 5): o teto de 8 horas por dia não comporta nem 2 horas mais uma diária.
   expect(regras.maxHorasDia).toBe(8)
   expect(REGRAS_PADRAO.maxHorasDia).toBe(8)
   const contexto: Contexto = {
     ...contextoBom,
     regras: { ...regras, maxServicosDia: 2 },
-    confirmados: [confirmado('2026-11-19T11:00', '2026-11-19T19:00')],
+    // 08:00 às 10:00 locais, no mesmo endereço do pedido: sem deslocamento entre eles,
+    // então sobra espaço no calendário e quem prende é só o teto de horas
+    confirmados: [confirmado('2026-11-19T11:00', '2026-11-19T13:00', ENDERECO)],
   }
-  // mesmo que houvesse espaço no calendário, a segunda diária não cabe nas horas dela
-  const d = decidir({ ...pedidoBom, inicio: utc('2026-11-19T19:30') }, contexto)
+  const d = decidir({ ...pedidoBom, inicio: utc('2026-11-19T13:00') }, contexto)
   expect(d.acao).toBe('oferecer')
+  if (d.acao !== 'oferecer') return
+  expect(d.motivo).toBe('dia_cheio')
 })
 
 test('estourar o teto de horas da semana é amarela e oferece outra semana', () => {
@@ -649,4 +655,152 @@ test('decidir não altera o pedido nem o contexto', () => {
   decidir(pedido, contexto)
   expect(JSON.stringify(pedido)).toBe(copiaPedido)
   expect(JSON.stringify(contexto)).toBe(copiaContexto)
+})
+
+
+// --- amarela nunca promete uma lista que não tem ----------------------------
+
+test('sem horário nenhum na janela, o pedido é dela e não uma amarela vazia', () => {
+  // teto de 6 horas por dia: nenhuma diária de 8 horas cabe em dia nenhum
+  const contexto: Contexto = { ...contextoBom, regras: { ...regras, maxHorasDia: 6 } }
+  const d = decidir(pedidoBom, contexto)
+  expect(d.acao).toBe('escalar')
+  if (d.acao !== 'escalar') return
+  expect(d.motivo).toBe('sem_alternativa')
+})
+
+test('nenhuma amarela sem alternativa usa mensagem que anuncia lista', () => {
+  // A invariante, e não só os casos de hoje: mensagem terminada em dois-pontos
+  // promete uma lista, e lista vazia depois dela é uma frase que morre no meio.
+  const cenarios: Array<[Pedido, Contexto]> = [
+    [pedidoBom, contextoBom],
+    [pedidoBom, contextoComHorarioOcupado],
+    [pedidoBom, { ...contextoBom, regras: { ...regras, maxHorasDia: 6 } }],
+    [pedidoBom, { ...contextoBom, regras: { ...regras, maxHorasSemana: 4 } }],
+    [pedidoBom, { ...contextoBom, disponibilidade: [] }],
+    [{ ...pedidoBom, inicio: utc('2026-11-20T01:00') }, contextoBom],
+    [{ ...pedidoBom, inicio: utc('2026-11-13T11:00') }, contextoBom],
+    [
+      { ...pedidoBom, servicoId: PACOTE.id, medida: { horas: 2 } },
+      { ...contextoBom, servico: PACOTE },
+    ],
+    [
+      { ...pedidoBom, servicoId: PACOTE.id, medida: { horas: 9 } },
+      { ...contextoBom, servico: PACOTE },
+    ],
+  ]
+  for (const [pedido, contexto] of cenarios) {
+    const d = decidir(pedido, contexto)
+    if (d.acao !== 'oferecer') continue
+    if (d.alternativas.length === 0) {
+      expect(d.mensagem.trimEnd().endsWith(':')).toBe(false)
+    }
+  }
+})
+
+test('expediente vazio não vira amarela sem saída', () => {
+  const d = decidir(pedidoBom, { ...contextoBom, disponibilidade: [] })
+  expect(d.acao).toBe('escalar')
+  if (d.acao !== 'escalar') return
+  expect(d.motivo).toBe('sem_alternativa')
+})
+
+// --- mais de uma diária -----------------------------------------------------
+
+test('orcar precifica duas diárias, mas agendar dois dias seguidos é dela', () => {
+  // o orçamento fecha o valor sem pestanejar...
+  expect(orcar(DIARIA, { diarias: 2 })).toMatchObject({ tipo: 'fechado', valor: 100000 })
+  // ...e é justamente por isso que decidir tem de barrar o agendamento
+  const d = decidir({ ...pedidoBom, medida: { diarias: 2 } }, contextoBom)
+  expect(d.acao).toBe('escalar')
+  if (d.acao !== 'escalar') return
+  expect(d.motivo).toBe('varias_diarias')
+})
+
+test('uma diária explícita continua sendo verde', () => {
+  expect(faixaDe(decidir({ ...pedidoBom, medida: { diarias: 1 } }, contextoBom))).toBe('verde')
+})
+
+test('mais de uma diária não vira um bloco de 16 horas', () => {
+  const d = decidir({ ...pedidoBom, medida: { diarias: 2 } }, contextoBom)
+  // nunca confirmado, então não existe intervalo de 16 horas em lugar nenhum
+  expect(d.acao).not.toBe('confirmar')
+  expect(JSON.stringify(d)).not.toMatch(/intervalo/)
+})
+
+// --- ordem: as amarelas vindas do orçamento também perdem da vermelha -------
+
+test('abaixo do mínimo não negocia com quem pediu desconto', () => {
+  const d = decidir(
+    { ...pedidoBom, servicoId: PACOTE.id, medida: { horas: 2 }, pediuDesconto: true },
+    { ...contextoBom, servico: PACOTE },
+  )
+  if (d.acao !== 'escalar') throw new Error('esperava vermelha')
+  expect(d.motivo).toBe('desconto')
+})
+
+test('acima do pacote não negocia com quem pediu desconto', () => {
+  const d = decidir(
+    { ...pedidoBom, servicoId: PACOTE.id, medida: { horas: 9 }, pediuDesconto: true },
+    { ...contextoBom, servico: PACOTE },
+  )
+  if (d.acao !== 'escalar') throw new Error('esperava vermelha')
+  expect(d.motivo).toBe('desconto')
+})
+
+// --- a janela de alternativas fica perto do dia pedido ----------------------
+
+test('pedido para dentro de três semanas é respondido com datas perto dele', () => {
+  // quinta, 03/12/2026, 08:00 local — três semanas depois de agora
+  const inicio = utc('2026-12-03T11:00')
+  const contexto: Contexto = {
+    ...contextoBom,
+    confirmados: [confirmado('2026-12-03T12:00', '2026-12-03T15:00')],
+  }
+  const d = decidir({ ...pedidoBom, inicio }, contexto)
+  if (d.acao !== 'oferecer') throw new Error('esperava amarela')
+  expect(d.alternativas.length).toBeGreaterThan(0)
+  for (const a of d.alternativas) {
+    // janela ancorada uma semana antes do pedido: 26/11 a 09/12, e nada da semana que vem
+    expect(diaLocal(a.inicio) >= '2026-11-26').toBe(true)
+    expect(diaLocal(a.inicio) <= '2026-12-09').toBe(true)
+  }
+})
+
+test('pedido para logo não é afetado pela âncora: a janela começa agora', () => {
+  const d = decidir(pedidoBom, contextoComHorarioOcupado)
+  if (d.acao !== 'oferecer') throw new Error('esperava amarela')
+  // 19/11 menos uma semana é 12/11, que é hoje: a janela é a de sempre
+  for (const a of d.alternativas) {
+    expect(diaLocal(a.inicio) >= '2026-11-12').toBe(true)
+  }
+})
+
+// --- o intervalo devolvido não é o Date do chamador -------------------------
+
+test('mexer no intervalo devolvido não mexe no pedido', () => {
+  const pedido = { ...pedidoBom, inicio: new Date(pedidoBom.inicio.getTime()) }
+  const antes = pedido.inicio.getTime()
+  const d = decidir(pedido, contextoBom)
+  if (d.acao !== 'confirmar') throw new Error('esperava verde')
+  d.intervalo.inicio.setTime(0)
+  expect(pedido.inicio.getTime()).toBe(antes)
+})
+
+// --- o aviso de preço não vende serviço -------------------------------------
+
+test('o aviso de preço não recomenda um serviço no lugar do cliente', () => {
+  const d = decidir(
+    { ...pedidoBom, servicoId: PACOTE.id, medida: { horas: Math.ceil(horasDeVirada) } },
+    { ...contextoBom, servico: PACOTE },
+  )
+  if (d.acao !== 'confirmar') throw new Error('esperava verde')
+  const aviso = d.avisoPreco ?? ''
+  // nomear a diária mais barata empurraria manutenção para quem precisa de pesada;
+  // nomear o pacote de horas, que é o que o cliente pediu, é correto
+  for (const servico of CATALOGO.filter((x) => x.formaCobranca === 'diaria')) {
+    expect(aviso.toLowerCase()).not.toContain(servico.nome.toLowerCase())
+  }
+  // mas o cliente é convidado a dizer o que precisa, em vez de ficar sem saída
+  expect(aviso).toMatch(/tipo de limpeza/i)
 })

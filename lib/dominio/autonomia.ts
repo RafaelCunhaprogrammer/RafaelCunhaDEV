@@ -44,8 +44,10 @@ const MIN = 60_000
 const HORA = 3_600_000
 const DIA_MS = 86_400_000
 
-/** Janela de busca de alternativas, em dias de calendário a partir de hoje. */
+/** Janela de busca de alternativas, em dias de calendário. */
 const DIAS_DE_BUSCA = 14
+/** Quanto a janela começa antes do dia pedido, para a oferta ficar perto dele. */
+const DIAS_ANTES_DO_PEDIDO = 7
 /** "O agente oferece até duas alternativas" (regra 5.5). */
 const MAX_ALTERNATIVAS = 2
 /** Tolerância na soma de horas, para fração binária não inventar estouro de teto. */
@@ -95,6 +97,8 @@ export type Contexto = {
 export type MotivoEscalada =
   | 'agente_pausado'
   | 'nao_entendi'
+  | 'varias_diarias'
+  | 'sem_alternativa'
   | 'pediu_falar_com_ela'
   | 'alegou_urgencia'
   | 'desconto'
@@ -152,6 +156,10 @@ const MENSAGENS_ESCALADA: Record<Exclude<MotivoEscalada, 'avaliacao' | 'visita_t
     'Anotei seu pedido. Nesta semana a Allana está confirmando os agendamentos pessoalmente, e ela te responde.',
   nao_entendi:
     'Não quero te passar informação errada sobre isso. Vou chamar a Allana para te responder.',
+  varias_diarias:
+    'Mais de uma diária é a Allana que encaixa na agenda, para ver quais dias dão. Já passei seu pedido para ela e te retorno.',
+  sem_alternativa:
+    'Procurei e não achei nenhum horário livre por perto dessa data que caiba nas regras da Allana. Vou passar seu pedido para ela e te retorno.',
   pediu_falar_com_ela: 'Claro. Já avisei a Allana e ela fala com você.',
   alegou_urgencia:
     'Entendi a urgência. Vou falar com a Allana agora para ela te responder o quanto antes.',
@@ -209,9 +217,13 @@ function avisoDePreco(servico: Servico, valorCentavos: Centavos): string | null 
   if (diaria === null) return null
   const precoDiaria = diaria.precoCentavos as number
   if (valorCentavos < precoDiaria) return null
+  // De propósito sem nomear o serviço: a diária mais barata é a de manutenção, e
+  // empurrar manutenção para quem precisa de limpeza pesada seria o agente vendendo
+  // o serviço errado. Compara o preço e devolve a escolha ao cliente.
   return (
-    `Vale saber: esse pacote de horas sai por ${reais(valorCentavos)}, e a ${diaria.nome.toLowerCase()} ` +
-    `custa ${reais(precoDiaria)} por uma diária de até 8 horas. Se preferir fechar como diária, eu troco.`
+    `Vale saber: esse pacote de horas sai por ${reais(valorCentavos)}, e na tabela da Allana uma ` +
+    `diária de até 8 horas começa em ${reais(precoDiaria)}. Se quiser fechar como diária, me diga ` +
+    `que tipo de limpeza você precisa que eu já vejo com ela.`
   )
 }
 
@@ -352,6 +364,11 @@ function duracaoMinDoPedido(servico: Servico, pedido: Pedido, alvo: AlvoDoPedido
   return null
 }
 
+/** Quantas diárias o pedido quer. Sem medida, uma — é o padrão de `orcar`. */
+function diariasPedidas(pedido: Pedido): number {
+  return positivo(pedido.medida.diarias ?? 1) ?? 1
+}
+
 function positivo(valor: number | null | undefined): number | null {
   return typeof valor === 'number' && Number.isFinite(valor) && valor > 0 ? valor : null
 }
@@ -403,10 +420,16 @@ function faltaDadoDeEquipe(pedido: Pedido): boolean {
 // --- alternativas ------------------------------------------------------------
 
 /**
- * Alternativas da faixa amarela: os primeiros blocos livres dos próximos 14 dias
- * que também cabem no teto de carga — oferecer um horário que estouraria a carga
- * dela seria empurrar o problema para a frente. O endereço do pedido vai para
- * `horariosLivres`, para não cobrar deslocamento contra um serviço no mesmo lugar.
+ * Alternativas da faixa amarela: os primeiros blocos livres de uma janela de 14
+ * dias que também cabem no teto de carga — oferecer um horário que estouraria a
+ * carga dela seria empurrar o problema para a frente. O endereço do pedido vai
+ * para `horariosLivres`, para não cobrar deslocamento contra um serviço no mesmo
+ * lugar.
+ *
+ * A janela é ancorada uma semana antes do dia pedido, nunca antes de agora. Quem
+ * pede uma data de dezembro e ouve uma oferta de novembro entende que o agente não
+ * entendeu o pedido; é pior do que não oferecer nada. A antecedência mínima
+ * continua sendo cobrada por `horariosLivres` em relação a `agora`.
  */
 function alternativas(
   pedido: Pedido,
@@ -417,9 +440,12 @@ function alternativas(
   const { regras, disponibilidade, bloqueios, confirmados, agora } = contexto
   const horasNovas = duracaoMin / 60
   const encontradas: Intervalo[] = []
+  const ancora = new Date(
+    Math.max(agora.getTime(), pedido.inicio.getTime() - DIAS_ANTES_DO_PEDIDO * DIA_MS),
+  )
 
   for (let i = 0; i < DIAS_DE_BUSCA && encontradas.length < MAX_ALTERNATIVAS; i++) {
-    const dia = meioDiaLocal(agora, i)
+    const dia = meioDiaLocal(ancora, i)
     if (estouraCarga(confirmados, dia, horasNovas, regras) !== null) continue
 
     const livres = horariosLivres({
@@ -473,6 +499,28 @@ function oferecer(
   })
 }
 
+/**
+ * Amarela cujo caminho de saída é outro horário. A mensagem anuncia uma lista, então
+ * **a lista não pode estar vazia**: sem horário nenhum nos 14 dias da janela, o agente
+ * não tem o que oferecer e o pedido é dela. Deixar passar daria uma frase terminada em
+ * dois-pontos e nada depois, de madrugada, com ninguém olhando. Todo `oferecer` com
+ * mensagem de lista passa por aqui, para a próxima chamada que alguém acrescentar já
+ * nascer com a invariante.
+ */
+function oferecerHorarios(
+  motivo: MotivoOferta,
+  mensagem: string,
+  pedido: Pedido,
+  contexto: Contexto,
+  duracaoMin: number | null,
+): Decisao {
+  const encontradas = alternativas(pedido, contexto, duracaoMin)
+  if (encontradas.length === 0) {
+    return escalar('sem_alternativa', MENSAGENS_ESCALADA.sem_alternativa)
+  }
+  return oferecer(motivo, mensagem, encontradas)
+}
+
 function perguntar(mensagem: string, perguntas: readonly string[]): Decisao {
   return Object.freeze({
     acao: 'perguntar' as const,
@@ -490,7 +538,12 @@ function confirmar(
   return Object.freeze({
     faixa: 'verde' as const,
     acao: 'confirmar' as const,
-    intervalo: Object.freeze({ inicio: intervalo.inicio, fim: intervalo.fim }),
+    // Cópias: Object.freeze não congela um Date, e quem receber a decisão não pode
+    // conseguir mudar o instante do pedido original mexendo no intervalo devolvido.
+    intervalo: Object.freeze({
+      inicio: new Date(intervalo.inicio.getTime()),
+      fim: new Date(intervalo.fim.getTime()),
+    }),
     valorCentavos,
     detalhe,
     avisoPreco,
@@ -531,6 +584,14 @@ export function decidir(pedido: Pedido, contexto: Contexto): Decisao {
   // 3. Faixa vermelha, na ordem em que os motivos se sobrepõem.
   if (pedido.naoEntendi || !servicoConfere || (precisaDeHorario && duracaoMin === null)) {
     return escalar('nao_entendi', MENSAGENS_ESCALADA.nao_entendi)
+  }
+  if (alvo === 'servico' && servico.formaCobranca === 'diaria' && diariasPedidas(pedido) > 1) {
+    // `orcar` precifica duas diárias sem pestanejar, mas duas diárias não são um
+    // compromisso de 16 horas seguidas: são dois dias, e quem distribui dias na
+    // agenda dela é ela. Agendamento de vários dias está fora do escopo da T4, e
+    // deixar passar daria um bloco que não cabe em expediente nenhum, calibraria os
+    // limites de equipe de 8 horas contra 16, e contaria um dia no lugar de dois.
+    return escalar('varias_diarias', MENSAGENS_ESCALADA.varias_diarias)
   }
   if (pedido.pediuFalarComEla) {
     return escalar('pediu_falar_com_ela', MENSAGENS_ESCALADA.pediu_falar_com_ela)
@@ -589,18 +650,22 @@ export function decidir(pedido: Pedido, contexto: Contexto): Decisao {
   const horasNovas = duracaoMin / 60
 
   if (!dentroDoExpediente(intervalo, contexto.disponibilidade)) {
-    return oferecer(
+    return oferecerHorarios(
       'fora_do_expediente',
       'Esse horário está fora do expediente da Allana, mas eu tenho estas opções:',
-      alternativas(pedido, contexto, duracaoMin),
+      pedido,
+      contexto,
+      duracaoMin,
     )
   }
   const antecedenciaMs = Math.max(0, regras.antecedenciaMinHoras) * HORA
   if (intervalo.inicio.getTime() - contexto.agora.getTime() < antecedenciaMs) {
-    return oferecer(
+    return oferecerHorarios(
       'antecedencia',
       `Para esse serviço eu preciso de pelo menos ${regras.antecedenciaMinHoras} horas de antecedência. Posso te oferecer:`,
-      alternativas(pedido, contexto, duracaoMin),
+      pedido,
+      contexto,
+      duracaoMin,
     )
   }
   const candidato: IntervaloComEndereco = { ...intervalo, endereco: pedido.endereco }
@@ -608,25 +673,31 @@ export function decidir(pedido: Pedido, contexto: Contexto): Decisao {
     conflita(candidato, contexto.confirmados, regras.deslocamentoMin) ||
     emBloqueio(intervalo, contexto.bloqueios, pedido.endereco)
   ) {
-    return oferecer(
+    return oferecerHorarios(
       'horario_ocupado',
       'Esse horário já está ocupado na agenda dela, mas eu tenho estas opções:',
-      alternativas(pedido, contexto, duracaoMin),
+      pedido,
+      contexto,
+      duracaoMin,
     )
   }
   const estouro = estouraCarga(contexto.confirmados, intervalo.inicio, horasNovas, regras)
   if (estouro === 'dia_cheio') {
-    return oferecer(
+    return oferecerHorarios(
       'dia_cheio',
       'A agenda desse dia já está cheia. Posso te oferecer estes horários:',
-      alternativas(pedido, contexto, duracaoMin),
+      pedido,
+      contexto,
+      duracaoMin,
     )
   }
   if (estouro === 'semana_cheia') {
-    return oferecer(
+    return oferecerHorarios(
       'semana_cheia',
       'A semana dela já está cheia. Posso te oferecer estes horários:',
-      alternativas(pedido, contexto, duracaoMin),
+      pedido,
+      contexto,
+      duracaoMin,
     )
   }
 
