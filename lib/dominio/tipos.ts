@@ -3,7 +3,14 @@ export const FUSO = 'America/Sao_Paulo'
 /** Dinheiro sempre em centavos inteiros. Nunca float. */
 export type Centavos = number
 
-export type FormaCobranca = 'hora' | 'm2' | 'diaria' | 'sob_orcamento'
+/**
+ * Como o serviço é cobrado (seção 14 da especificação).
+ * - diaria / hora: há preço de tabela.
+ * - avaliacao: ela orça à distância, depois de colher informações.
+ * - visita_tecnica: não há preço sem ela ver o local; o caminho é agendar a visita.
+ * Não existe cobrança por metro quadrado.
+ */
+export type FormaCobranca = 'diaria' | 'hora' | 'avaliacao' | 'visita_tecnica'
 export type StatusAgendamento =
   | 'aguardando_ela'
   | 'confirmado'
@@ -21,7 +28,13 @@ export type Servico = {
   descricao: string
   formaCobranca: FormaCobranca
   duracaoEstimadaMin: number
-  precoCentavos: Centavos | null // null quando sob_orcamento
+  precoCentavos: Centavos | null // null quando avaliacao ou visita_tecnica
+  /** Mínimo de horas que ela aceita vender; null quando não há mínimo. */
+  minimoHoras: number | null
+  /** Mesmo com preço de tabela, o serviço pode exigir equipe e orçamento ajustado. */
+  podeExigirEquipe: boolean
+  /** Perguntas que ela precisa ver respondidas antes de orçar (forma avaliacao). */
+  perguntasAvaliacao: string[]
   ativo: boolean
 }
 
