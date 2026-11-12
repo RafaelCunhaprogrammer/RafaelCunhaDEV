@@ -236,6 +236,123 @@ git commit -m "feat: conflito de horário e cálculo de horários livres"
 
 ---
 
+### Task 3.5: Catálogo real da Allana
+
+Tarefa criada em 12/11/2026, depois que a Allana informou os serviços e os valores
+de verdade. Ver seção 14 da especificação, que tem precedência sobre qualquer preço
+presumido antes dela.
+
+**Files:**
+- Modify: `lib/dominio/tipos.ts`, `lib/dominio/orcamento.ts`
+- Modify: `lib/dominio/orcamento.test.ts`
+- Test: `lib/dominio/orcamento.test.ts`
+
+**Interfaces:**
+- Consumes: `Servico`, `Centavos`, `reais` de `lib/dominio/tipos.ts`
+- Produces:
+  - `FormaCobranca = 'diaria' | 'hora' | 'avaliacao' | 'visita_tecnica'` (sai `m2`, sai `sob_orcamento`)
+  - `Servico` ganha `minimoHoras: number | null` e `podeExigirEquipe: boolean`
+  - `Orcamento = { tipo: 'fechado'; valor: Centavos; detalhe: string }
+       | { tipo: 'avaliacao'; mensagem: string; perguntas: string[] }
+       | { tipo: 'visita_tecnica'; mensagem: string }
+       | { tipo: 'abaixo_do_minimo'; minimoHoras: number; mensagem: string }`
+
+- [ ] **Step 1: Escrever os testes que falham**
+
+```typescript
+test('não existe mais cobrança por metro quadrado', () => {
+  // FormaCobranca não aceita 'm2'; o teste é de tipo e de catálogo
+  expect(CATALOGO.every(s => s.formaCobranca !== 'm2')).toBe(true)
+})
+
+test('diária de manutenção custa R$ 500,00 e dura 8 horas', () => {
+  const s = servicoDoCatalogo('residencial-manutencao')
+  expect(s.precoCentavos).toBe(50000)
+  expect(s.duracaoEstimadaMin).toBe(480)
+  expect(orcar(s, { diarias: 1 })).toEqual({ tipo: 'fechado', valor: 50000, detalhe: '1 diária × R$ 500,00' })
+})
+
+test.each([
+  ['pre-pos-mudanca', 65000],
+  ['residencial-pesada', 60000],
+  ['residencial-manutencao', 50000],
+])('%s tem o valor que ela informou', (id, centavos) => {
+  expect(servicoDoCatalogo(id).precoCentavos).toBe(centavos)
+})
+
+test('pacote de horas abaixo do mínimo não devolve valor, e diz o mínimo', () => {
+  const r = orcar(servicoPacoteHoras(), { horas: 2 })
+  expect(r).toEqual({ tipo: 'abaixo_do_minimo', minimoHoras: 4, mensagem: expect.stringContaining('4 horas') })
+  expect(r).not.toHaveProperty('valor')
+})
+
+test('pacote de horas no mínimo exato vale R$ 280,00', () => {
+  expect(orcar(servicoPacoteHoras(), { horas: 4 })).toMatchObject({ tipo: 'fechado', valor: 28000 })
+})
+
+test('vidros e comercial pedem avaliação, com as perguntas que ela precisa', () => {
+  const r = orcar(servicoDoCatalogo('vidros'), {})
+  expect(r.tipo).toBe('avaliacao')
+  expect((r as any).perguntas.length).toBeGreaterThan(0)
+})
+
+test.each(['pos-obra', 'personal-organizer', 'revitalizacao-piso'])(
+  '%s exige visita técnica, não orçamento pendente', (id) => {
+    const r = orcar(servicoDoCatalogo(id), {})
+    expect(r.tipo).toBe('visita_tecnica')
+  })
+
+test('nenhuma forma sem preço fechado devolve número', () => {
+  for (const s of CATALOGO.filter(s => s.precoCentavos === null)) {
+    const r = orcar(s, { horas: 8, diarias: 1 })
+    expect(r).not.toHaveProperty('valor')
+  }
+})
+
+test('serviço que pode exigir equipe está marcado como tal', () => {
+  // as três diárias com preço de tabela podem escapar da tabela (seção 14.3, item 4)
+  expect(servicoDoCatalogo('residencial-pesada').podeExigirEquipe).toBe(true)
+})
+```
+
+- [ ] **Step 2: Rodar e confirmar falha**
+
+Run: `npx vitest run lib/dominio/orcamento.test.ts`
+Expected: FAIL — `CATALOGO` não existe e `FormaCobranca` ainda tem `m2`
+
+- [ ] **Step 3: Trocar as formas de cobrança em `tipos.ts`**
+
+`FormaCobranca` passa a `'diaria' | 'hora' | 'avaliacao' | 'visita_tecnica'`. `Servico`
+ganha `minimoHoras: number | null` e `podeExigirEquipe: boolean`. O compilador aponta
+cada lugar que presumia `m2` ou `sob_orcamento`; corrigir todos.
+
+- [ ] **Step 4: Escrever o catálogo em `lib/dominio/catalogo.ts`**
+
+As oito linhas da seção 14.1 da especificação, mais o pacote de horas da 14.2, como
+dado e não como código: `CATALOGO: Servico[]`, com `id` em minúsculas e hífen. Preços
+em centavos. Revitalização de piso marcada com comentário de que a categoria é
+provisória até ela confirmar.
+
+- [ ] **Step 5: Estender `orcar` para as quatro saídas**
+
+`avaliacao` devolve as perguntas que ela precisa fazer (tamanho, grau de sujidade,
+quantidade de vidros, horário de acesso ao comercial). `visita_tecnica` devolve a
+mensagem que oferece agendar a visita. `abaixo_do_minimo` devolve o mínimo em horas.
+Nenhuma das três devolve valor.
+
+- [ ] **Step 6: Rodar e confirmar que passa**
+
+Run: `npm test && npx tsc --noEmit`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add -A && git commit -m "feat: catálogo real da Allana, com mínimo de horas e visita técnica"
+```
+
+---
+
 ### Task 4: Faixas de autonomia e limite de carga (regras 5.5 e 5.6)
 
 **Files:**
@@ -243,7 +360,12 @@ git commit -m "feat: conflito de horário e cálculo de horários livres"
 - Test: `lib/dominio/autonomia.test.ts`
 
 **Interfaces:**
-- Consumes: `conflita`, `horariosLivres` de `lib/dominio/agenda.ts`; `orcar` de `lib/dominio/orcamento.ts`
+- Consumes: `conflita`, `horariosLivres` de `lib/dominio/agenda.ts`; `orcar` e `CATALOGO` de `lib/dominio/orcamento.ts` e `lib/dominio/catalogo.ts`
+
+**Itens herdados (decididos em tarefas anteriores):**
+- Acrescentar `endereco?: string` aos params de `horariosLivres` e repassar ao filtro de conflito, para não cobrar deslocamento contra agendamento no mesmo endereço (adiado da T3 por recomendação do revisor; a função interna já aceita endereço)
+- `visita_tecnica` e `podeExigirEquipe` entram na faixa vermelha (seção 14.3 da especificação)
+- O teto de carga passa a ser expresso em horas, não só em número de serviços: duas diárias de 8 horas num dia são impossíveis (seção 14.3, item 5)
 - Produces:
   - `decidir(pedido: Pedido, contexto: Contexto): Decisao`
   - `Pedido = { servicoId: string; inicio: Date; duracaoMin: number; endereco: string; bairro: string; clienteNovo: boolean; pediuFalarComEla: boolean; alegouUrgencia: boolean; pediuDesconto: boolean; alternativasRecusadas: number; repeticoesDoMesmoPedido: number }`
