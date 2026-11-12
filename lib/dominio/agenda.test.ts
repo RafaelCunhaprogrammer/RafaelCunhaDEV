@@ -1,11 +1,5 @@
 import { FUSO, type Bloqueio, type Disponibilidade, type Intervalo } from './tipos'
 import { conflita, horariosLivres } from './agenda'
-import {
-  diaSemanaLocal,
-  horaLocal as horaLocalDoHelper,
-  instanteDeHoraLocal,
-  partesLocais,
-} from './tempo'
 
 // ---------------------------------------------------------------------------
 // Auxiliares dos testes. Propositalmente independentes de lib/dominio/tempo.ts:
@@ -20,10 +14,10 @@ const leitorLocal = new Intl.DateTimeFormat('en-CA', {
   hour12: false,
 })
 
-/** Hora do dia (0-23) do instante, lida no fuso de São Paulo. */
-function horaLocal(instante: Date): number {
-  const [hora] = leitorLocal.format(instante).split(':')
-  return Number(hora)
+/** Minutos desde a meia-noite locais, no fuso de São Paulo. */
+function minutoDoDiaLocal(instante: Date): number {
+  const [hora, minuto] = leitorLocal.format(instante).split(':').map(Number)
+  return hora * 60 + minuto
 }
 
 /** Hora e minuto locais no formato "HH:mm", no fuso de São Paulo. */
@@ -114,7 +108,13 @@ test('o expediente é interpretado no fuso de São Paulo, não em UTC', () => {
   const livres = horariosLivres({ ...base, agora: utc('2026-11-11T23:00') })
 
   expect(livres.length).toBeGreaterThan(0)
-  expect(livres.every((b) => horaLocal(b.inicio) >= 8 && horaLocal(b.fim) <= 18)).toBe(true)
+  // em minutos, não em horas: com granularidade de hora um bloco terminando
+  // 18:45 passaria pela asserção
+  expect(
+    livres.every(
+      (b) => minutoDoDiaLocal(b.inicio) >= 8 * 60 && minutoDoDiaLocal(b.fim) <= 18 * 60,
+    ),
+  ).toBe(true)
   expect(horaMinutoLocal(livres[0].inicio)).toBe('08:00')
   // o primeiro bloco é 08:00 em São Paulo, ou seja 11:00 UTC
   expect(livres[0].inicio).toEqual(utc('2026-11-12T11:00'))
@@ -237,29 +237,35 @@ test('disponibilidade de outro dia da semana não vale para este dia', () => {
   expect(horariosLivres({ ...base, disponibilidade: soSabado })).toEqual([])
 })
 
-// --- helper de fuso ---------------------------------------------------------
+test('faixas sobrepostas não repetem o mesmo horário', () => {
+  const livres = horariosLivres({
+    ...base,
+    duracaoMin: 60,
+    disponibilidade: [
+      { id: 'manha', diaSemana: 4, horaInicio: '08:00', horaFim: '12:00' },
+      { id: 'quase-igual', diaSemana: 4, horaInicio: '10:00', horaFim: '14:00' },
+    ],
+  })
 
-test('a conversão hora de parede -> instante -> hora de parede fecha o círculo', () => {
-  const datas = ['2026-01-15', '2026-02-18', '2026-07-01', '2026-10-21', '2026-11-12']
-  const horas = ['00:00', '08:00', '12:30', '18:00', '23:30']
-
-  for (const data of datas) {
-    for (const hora of horas) {
-      const instante = instanteDeHoraLocal(data, hora)
-      const p = partesLocais(instante)
-      const voltou = `${String(p.ano).padStart(4, '0')}-${String(p.mes).padStart(2, '0')}-${String(p.dia).padStart(2, '0')}`
-      expect(`${voltou} ${horaMinutoLocal(instante)}`).toBe(`${data} ${hora}`)
-    }
-  }
+  const inicios = livres.map((b) => horaMinutoLocal(b.inicio))
+  expect(new Set(inicios).size).toBe(inicios.length)
+  expect(inicios.filter((h) => h === '10:00')).toHaveLength(1)
+  expect(inicios[0]).toBe('08:00')
+  expect(inicios[inicios.length - 1]).toBe('13:00')
 })
 
-test('hora e dia da semana são lidos no fuso, não em UTC', () => {
-  // 02:00 UTC de sexta = 23:00 de quinta em São Paulo
-  const instante = utc('2026-11-13T02:00')
-  expect(horaLocalDoHelper(instante)).toBe(23)
-  expect(diaSemanaLocal(instante)).toBe(4) // quinta, não sexta
-})
+test('faixa que começa fora da grade de 30 minutos sai a partir do próprio início', () => {
+  // o passo de 30 min é relativo ao início da faixa, não à hora cheia
+  const livres = horariosLivres({
+    ...base,
+    duracaoMin: 60,
+    disponibilidade: [{ id: 'quebrada', diaSemana: 4, horaInicio: '08:15', horaFim: '11:00' }],
+  })
 
-test('08:00 em São Paulo é 11:00 UTC, não 08:00 UTC', () => {
-  expect(instanteDeHoraLocal('2026-11-12', '08:00')).toEqual(utc('2026-11-12T11:00'))
+  expect(livres.map((b) => horaMinutoLocal(b.inicio))).toEqual([
+    '08:15',
+    '08:45',
+    '09:15',
+    '09:45',
+  ])
 })

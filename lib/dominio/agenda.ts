@@ -64,7 +64,11 @@ export function conflita(
  * Os candidatos nascem dentro de cada faixa de disponibilidade do dia, de 30 em
  * 30 minutos de hora de parede no FUSO, e são descartados quando passam do fim
  * da faixa, caem em bloqueio, conflitam com um confirmado ou violam a
- * antecedência mínima em relação a `agora`. Devolve em ordem cronológica.
+ * antecedência mínima em relação a `agora`. Devolve em ordem cronológica, sem
+ * repetir instante de início: faixas sobrepostas no mesmo dia são dado
+ * inconsistente, mas nove telas mostram esta lista ao cliente e um "08:00"
+ * duplicado é defeito visível. A validação de sobreposição é da tela de
+ * cadastro; a exibição não depende dela.
  *
  * Dia sem faixa cadastrada devolve lista vazia — ausência de expediente não é erro.
  *
@@ -126,5 +130,7 @@ export function horariosLivres(params: {
     }
   }
 
-  return livres.sort((a, b) => a.inicio.getTime() - b.inicio.getTime())
+  const porInicio = new Map<number, Intervalo>()
+  for (const bloco of livres) porInicio.set(bloco.inicio.getTime(), bloco)
+  return [...porInicio.values()].sort((a, b) => a.inicio.getTime() - b.inicio.getTime())
 }
