@@ -1,8 +1,18 @@
-# Alana Rosa — Limpeza de Alto Padrão
+# Allana Rosa — Limpeza Profissional de Alto Padrão
 ## Especificação de projeto
 
-**Data:** 11 de novembro de 2026
-**Cliente final:** Alana da Silva Rosa — Florianópolis, Santa Catarina
+**Data:** 11 de novembro de 2026 · catálogo real e nome corrigidos em 12/11/2026
+**Cliente final:** Allana da Silva Rosa — Florianópolis, Santa Catarina
+
+> **Grafia do nome:** **Allana**, com dois L, como no material que ela mesma
+> escreveu. A primeira versão deste documento usava "Alana", confirmado como erro
+> pelo Rafael em 12/11/2026. Os caminhos de arquivo deste repositório que contêm
+> `alana-rosa` ficam como estão, para não quebrar referências internas; o nome
+> visível ao usuário é sempre Allana.
+
+> **Marca:** "Allana Rosa — Limpeza Profissional de Alto Padrão", escolha do
+> Rafael em 12/11/2026, juntando a linha dela ("LIMPEZA PROFISSIONAL") com o
+> posicionamento de nicho.
 **Solicitante:** Rafael Cunha (irmão)
 **Caráter:** presente-surpresa. A Fase 1 é construída sem o conhecimento dela.
 
@@ -432,3 +442,93 @@ contábil. Nenhum deles é necessário para ela trabalhar melhor na segunda-feir
 4. Fotos reais e depoimentos autorizados pelos clientes
 5. Domínio próprio
 6. Aprovação dela para sair do modo invisível
+
+---
+
+## 14. Catálogo real, informado pela Allana (11/11/2026)
+
+Esta seção substitui qualquer preço ou serviço presumido nas seções anteriores. É
+a palavra dela, e tem precedência.
+
+### 14.1 Diária, até 8 horas de serviço individual
+
+| Serviço | Valor | Forma |
+|---|---|---|
+| Limpeza pré e pós-mudança | R$ 650,00 | diária |
+| Limpeza residencial pesada | R$ 600,00 | diária |
+| Limpeza residencial de manutenção | R$ 500,00 | diária |
+| Limpeza de vidros e esquadrias | — | avaliação |
+| Limpeza comercial | — | avaliação |
+| Limpeza pós-obra | — | **visita técnica** |
+| Organização de ambientes (Personal Organizer) | — | **visita técnica** |
+| Revitalização de piso | — | **visita técnica**, provisório |
+
+**Revitalização de piso.** Ela lembrou do serviço depois de mandar a lista e não
+disse a categoria. Decisão do Rafael em 12/11/2026: fica como **visita técnica**
+provisoriamente, e ela confirma. A seção 7.3 do formulário pergunta isso de todo
+jeito, então o provisório se resolve sozinho quando ela preencher.
+
+### 14.2 Pacote de horas
+
+R$ 70,00 por hora, **mínimo de 4 horas**, exclusivo para ambientes pequenos e
+mediante avaliação da demanda.
+
+### 14.3 O que isso muda no sistema
+
+Cinco consequências, nenhuma delas cosmética.
+
+**1. Não existe cobrança por metro quadrado.** A `FormaCobranca` previa `m2`; ela
+não cobra assim. O valor sai da diária ou do pacote de horas. Metragem continua
+útil como informação para ela avaliar, nunca como base de cálculo. O agente **não
+pode** oferecer preço por metro.
+
+**2. Mínimo de 4 horas no pacote.** Regra de negócio nova: pedido de 2 horas não
+vale R$ 140,00 — ela não aceita. `orcar` tem de recusar abaixo do mínimo e dizer o
+mínimo, não calcular um valor que ela não honraria.
+
+**3. "Avaliação" e "visita técnica" são coisas diferentes, e o agente precisa
+saber qual é qual.**
+
+- **Avaliação** (vidros, comercial): ela consegue orçar à distância, depois de
+  perguntar o que precisa saber. O agente colhe a informação e passa para ela.
+- **Visita técnica** (pós-obra, personal organizer, revitalização de piso): não
+  existe preço sem ela ver o lugar. Aqui o agente não deve dizer "a Allana te
+  retorna com o valor" e encerrar — deve **oferecer agendamento da visita**. É um
+  compromisso de agenda, não um orçamento pendente.
+
+Isso exige separar `sob_orcamento` em duas formas: `avaliacao` e `visita_tecnica`.
+
+**4. O trabalho pode exigir equipe, e aí o preço muda.** Palavra dela: dependendo
+do tamanho do imóvel, do grau de sujidade e da complexidade, pode ser necessária
+equipe, com orçamento ajustado. Ou seja: **até serviço com preço de tabela pode
+escapar da tabela.** O agente não pode cotar R$ 500,00 para uma casa de 400 m²
+sem perguntar nada. Antes de fechar na faixa verde, ele tem de colher tamanho e
+grau de sujidade, e escalar quando passar do que uma pessoa faz em 8 horas.
+
+**5. A diária é de 8 horas, e isso é a duração do agendamento.** `duracaoEstimadaMin`
+dos três serviços com preço de tabela é 480. Com teto de dois serviços por dia
+(regra 5.6), duas diárias num dia são 16 horas de trabalho — impossível. O teto
+real de diárias é **uma por dia**, e o limite de carga tem de ser expresso em horas
+e não só em número de serviços.
+
+### 14.4 Posicionamento
+
+A marca é **"Allana Rosa — Limpeza Profissional de Alto Padrão"**: a linha dela
+("LIMPEZA PROFISSIONAL") com o posicionamento de nicho que sustenta o preço.
+
+### 14.5 Tarefas que esta seção obriga a mexer
+
+| Tarefa | Situação | O que muda |
+|---|---|---|
+| T1 tipos | completa | `FormaCobranca` perde `m2` e ganha `avaliacao` e `visita_tecnica` no lugar de `sob_orcamento`; `Servico` ganha `minimoHoras` e `exigeVisitaTecnica` |
+| T2 orçamento | completa | mínimo de 4 horas no pacote; três saídas em vez de duas (preço fechado, avaliação, visita técnica) |
+| T4 autonomia | a fazer | visita técnica e "pode exigir equipe" entram na faixa vermelha; teto de carga em horas |
+| T6 esquema, T7 exemplo | a fazer | catálogo real como dado inicial, não inventado |
+| T11 site, T12 agendar | a fazer | tabela de preços real; pacote de horas com mínimo visível |
+
+Ruling: isto entra como **Tarefa 3.5**, uma tarefa própria entre a T3 e a T4, em
+vez de emenda nas tarefas já fechadas — por que: a T1 e a T2 passaram por revisão
+e re-revisão, e reabrir tarefa fechada perde o rastro do que foi aprovado; uma
+tarefa nova com teste próprio deixa a mudança de regra de negócio auditável, que é
+exatamente o que ela é — custo se errado: uma tarefa a mais no plano, e a T4 espera
+por ela.
