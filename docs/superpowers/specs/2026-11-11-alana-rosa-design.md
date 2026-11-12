@@ -203,7 +203,16 @@ tem tabela é pior que não responder.
 
 **5.4 Financeiro.** Sem dupla contagem:
 - **Entrou** = pagamentos com status `pago` e data paga no período
-- **A receber** = pagamentos `pendente` + agendamentos `concluido` sem pagamento
+- **A receber** = pagamentos `pendente` **vencidos até o fim do período** +
+  agendamentos `concluido` sem nenhum pagamento, pelo mesmo critério de data
+
+  A primeira versão desta regra dizia só "pagamentos `pendente`", sem dizer de
+  que período. Decisão de 12/11/2026, acatada do implementador da T5: conta todo
+  pendente cujo vencimento é anterior ao fim do período, inclusive de meses
+  passados. Uma dívida de outubro não pode desaparecer do fechamento de dezembro
+  só porque venceu antes — ela quer ver quem lhe deve, não quem lhe deveu naquele
+  mês. Pendente que vence **depois** do fim do período não conta: ainda não é
+  dela a receber.
 - **Saiu** = despesas no período
 - **Saldo** = entrou − saiu
 
