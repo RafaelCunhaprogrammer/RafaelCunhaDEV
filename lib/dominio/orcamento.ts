@@ -4,11 +4,16 @@ export type Medida = { horas?: number; diarias?: number }
 
 export type Orcamento =
   | { tipo: 'fechado'; valor: Centavos; detalhe: string }
-  | { tipo: 'avaliacao'; mensagem: string; perguntas: string[] }
+  | { tipo: 'avaliacao'; mensagem: string; perguntas: readonly string[] }
   | { tipo: 'visita_tecnica'; mensagem: string }
   | { tipo: 'abaixo_do_minimo'; minimoHoras: number; mensagem: string }
+  | { tipo: 'acima_do_pacote'; maximoHoras: number; mensagem: string }
+  | { tipo: 'falta_medida'; mensagem: string; perguntas: readonly string[] }
 
-/** A diária é de 8 horas; horas além disso não são pacote, são diária ou equipe. */
+/**
+ * O pacote de horas é, no máximo, um dia de trabalho. A comparação de preço com a
+ * diária não cabe aqui (orcar não conhece o catálogo): é requisito da Tarefa 4.
+ */
 const HORAS_POR_DIARIA = 8
 
 const VISITA_TECNICA: Orcamento = Object.freeze({
@@ -16,6 +21,8 @@ const VISITA_TECNICA: Orcamento = Object.freeze({
   mensagem:
     'Para esse serviço a Allana precisa conhecer o local antes de passar o valor. Posso agendar uma visita técnica para você?',
 })
+
+const MENSAGEM_FALTA_MEDIDA = 'Para calcular o valor, preciso de mais uma informação.'
 
 const MENSAGEM_AVALIACAO =
   'A Allana consegue te passar o valor depois de saber alguns detalhes. Pode me responder as perguntas abaixo?'
@@ -33,7 +40,16 @@ function avaliacao(mensagem: string, perguntas: readonly string[]): Orcamento {
   return Object.freeze({
     tipo: 'avaliacao' as const,
     mensagem,
-    perguntas: Object.freeze([...perguntas]) as string[],
+    perguntas: Object.freeze([...perguntas]),
+  })
+}
+
+/** Falta a medida para calcular; o agente resolve perguntando, sem escalar. */
+function faltaMedida(pergunta: string): Orcamento {
+  return Object.freeze({
+    tipo: 'falta_medida' as const,
+    mensagem: MENSAGEM_FALTA_MEDIDA,
+    perguntas: Object.freeze([pergunta]),
   })
 }
 
@@ -65,17 +81,33 @@ function plural(quantidade: number, singular: string, pluralForma: string): stri
  * Não existe cobrança por metro quadrado.
  */
 export function orcar(servico: Servico, medida: Medida): Orcamento {
-  if (servico.formaCobranca === 'visita_tecnica') return VISITA_TECNICA
-  if (servico.formaCobranca === 'avaliacao') return avaliacaoDoServico(servico)
+  const forma = servico.formaCobranca
+  switch (forma) {
+    case 'visita_tecnica':
+      return VISITA_TECNICA
+    case 'avaliacao':
+      return avaliacaoDoServico(servico)
+    case 'hora':
+    case 'diaria':
+      return orcarComPreco(servico, forma, medida)
+    default: {
+      // Nova forma de cobrança quebra o build aqui; vinda do banco, nunca vira preço.
+      const _exaustivo: never = forma
+      void _exaustivo
+      return avaliacaoDoServico(servico)
+    }
+  }
+}
 
+function orcarComPreco(servico: Servico, forma: 'hora' | 'diaria', medida: Medida): Orcamento {
   const preco = servico.precoCentavos
   if (preco === null || !Number.isFinite(preco) || preco <= 0) return avaliacaoDoServico(servico)
 
-  const porHora = servico.formaCobranca === 'hora'
-  const quantidade = porHora ? medida.horas : medida.diarias
-  if (!medidaValida(quantidade)) {
-    return avaliacao(MENSAGEM_AVALIACAO, [porHora ? PERGUNTA_HORAS : PERGUNTA_DIARIAS])
-  }
+  const porHora = forma === 'hora'
+  // Uma diária sem quantidade é uma diária; horas sem quantidade não têm padrão.
+  const quantidade = porHora ? medida.horas : (medida.diarias ?? 1)
+  const pergunta = porHora ? PERGUNTA_HORAS : PERGUNTA_DIARIAS
+  if (!medidaValida(quantidade)) return faltaMedida(pergunta)
 
   if (porHora) {
     const minimo = servico.minimoHoras
@@ -86,20 +118,18 @@ export function orcar(servico: Servico, medida: Medida): Orcamento {
         mensagem: `O mínimo para esse serviço é de ${plural(minimo, 'hora', 'horas')}, então não consigo fechar um pedido menor que isso.`,
       })
     }
-    // Acima de uma diária deixa de ser pacote: quem decide é a Allana.
     if (quantidade > HORAS_POR_DIARIA) {
-      return avaliacao(
-        'O serviço por hora vai até 8 horas. Para um período maior, a Allana avalia se a melhor opção é diária ou equipe. Pode me responder as perguntas abaixo?',
-        PERGUNTAS_GERAIS,
-      )
+      return Object.freeze({
+        tipo: 'acima_do_pacote' as const,
+        maximoHoras: HORAS_POR_DIARIA,
+        mensagem: `O serviço por hora vai até ${plural(HORAS_POR_DIARIA, 'hora', 'horas')}. Acima de um dia inteiro de trabalho, passa a ser diária ou equipe, e a Allana avalia o melhor formato.`,
+      })
     }
   }
 
   const valor = Math.round(preco * quantidade)
   // Valor zero (medida minúscula) ou fora do inteiro seguro (medida absurda) não é orçamento.
-  if (valor <= 0 || !Number.isSafeInteger(valor)) {
-    return avaliacao(MENSAGEM_AVALIACAO, [porHora ? PERGUNTA_HORAS : PERGUNTA_DIARIAS])
-  }
+  if (valor <= 0 || !Number.isSafeInteger(valor)) return faltaMedida(pergunta)
 
   const descricao = porHora
     ? plural(quantidade, 'hora', 'horas')

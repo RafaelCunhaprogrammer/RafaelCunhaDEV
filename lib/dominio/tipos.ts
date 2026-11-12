@@ -27,14 +27,17 @@ export type Servico = {
   nome: string
   descricao: string
   formaCobranca: FormaCobranca
-  duracaoEstimadaMin: number
+  /** Estimativa do trabalho em si; null quando só se sabe depois de avaliar ou ver o local. */
+  duracaoEstimadaMin: number | null
+  /** Duração da visita técnica, que é um compromisso de agenda à parte; null sem visita. */
+  duracaoVisitaMin: number | null
   precoCentavos: Centavos | null // null quando avaliacao ou visita_tecnica
   /** Mínimo de horas que ela aceita vender; null quando não há mínimo. */
   minimoHoras: number | null
   /** Mesmo com preço de tabela, o serviço pode exigir equipe e orçamento ajustado. */
   podeExigirEquipe: boolean
   /** Perguntas que ela precisa ver respondidas antes de orçar (forma avaliacao). */
-  perguntasAvaliacao: string[]
+  perguntasAvaliacao: readonly string[]
   ativo: boolean
 }
 

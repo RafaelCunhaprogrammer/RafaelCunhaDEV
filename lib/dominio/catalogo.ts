@@ -4,9 +4,11 @@ import type { Servico } from './tipos'
  * Catálogo real, informado pela Allana (especificação, seção 14.1 e 14.2).
  * Só dados: nenhuma regra de cálculo mora aqui. Preços em centavos.
  *
- * Durações: a diária é de 8 horas (480 min). Para visita técnica, a duração é a
- * da visita, que é o que vai para a agenda. Para avaliação, 480 é provisório:
- * ela ainda não informou a duração desses serviços (formulário, seção 7.3).
+ * Durações: `duracaoEstimadaMin` é sempre a do trabalho. A diária é de 8 horas
+ * (480 min); onde não se sabe, é null (serviços por avaliação, por visita técnica
+ * e o pacote de horas, cuja duração vem das horas orçadas). A visita técnica é um
+ * compromisso à parte, com `duracaoVisitaMin`. A seção 7.3 do formulário pede as
+ * durações reais a ela.
  */
 const OITO_HORAS = 480
 const DURACAO_VISITA_MIN = 60
@@ -18,6 +20,7 @@ export const CATALOGO: Servico[] = [
     descricao: 'Limpeza completa do imóvel antes ou depois de uma mudança. Diária de até 8 horas.',
     formaCobranca: 'diaria',
     duracaoEstimadaMin: OITO_HORAS,
+    duracaoVisitaMin: null,
     precoCentavos: 65000,
     minimoHoras: null,
     podeExigirEquipe: true,
@@ -30,6 +33,7 @@ export const CATALOGO: Servico[] = [
     descricao: 'Limpeza profunda de residência com sujeira acumulada. Diária de até 8 horas.',
     formaCobranca: 'diaria',
     duracaoEstimadaMin: OITO_HORAS,
+    duracaoVisitaMin: null,
     precoCentavos: 60000,
     minimoHoras: null,
     podeExigirEquipe: true,
@@ -42,6 +46,7 @@ export const CATALOGO: Servico[] = [
     descricao: 'Limpeza de rotina para manter a residência em dia. Diária de até 8 horas.',
     formaCobranca: 'diaria',
     duracaoEstimadaMin: OITO_HORAS,
+    duracaoVisitaMin: null,
     precoCentavos: 50000,
     minimoHoras: null,
     podeExigirEquipe: true,
@@ -53,7 +58,8 @@ export const CATALOGO: Servico[] = [
     nome: 'Limpeza de vidros e esquadrias',
     descricao: 'Limpeza de vidros, janelas e esquadrias. O valor é passado após uma avaliação.',
     formaCobranca: 'avaliacao',
-    duracaoEstimadaMin: OITO_HORAS,
+    duracaoEstimadaMin: null,
+    duracaoVisitaMin: null,
     precoCentavos: null,
     minimoHoras: null,
     podeExigirEquipe: false,
@@ -71,13 +77,14 @@ export const CATALOGO: Servico[] = [
     nome: 'Limpeza comercial',
     descricao: 'Limpeza de lojas, consultórios e escritórios. O valor é passado após uma avaliação.',
     formaCobranca: 'avaliacao',
-    duracaoEstimadaMin: OITO_HORAS,
+    duracaoEstimadaMin: null,
+    duracaoVisitaMin: null,
     precoCentavos: null,
     minimoHoras: null,
     podeExigirEquipe: false,
     perguntasAvaliacao: [
       'Que tipo de espaço é: loja, consultório, escritório ou outro?',
-      'Qual é a área aproximada do local, em metros quadrados?',
+      'Qual é o tamanho do local? Se não souber a metragem, diga quantos ambientes ele tem.',
       'Com que frequência a limpeza seria feita: uma vez só, semanal ou outra periodicidade?',
       'Em que dias e horários o acesso ao local é permitido para a limpeza?',
       'O local tem áreas que exigem cuidado especial, como equipamentos, vidros grandes ou piso delicado?',
@@ -89,7 +96,8 @@ export const CATALOGO: Servico[] = [
     nome: 'Limpeza pós-obra',
     descricao: 'Limpeza após reforma ou construção. Só é possível orçar depois de uma visita técnica.',
     formaCobranca: 'visita_tecnica',
-    duracaoEstimadaMin: DURACAO_VISITA_MIN,
+    duracaoEstimadaMin: null,
+    duracaoVisitaMin: DURACAO_VISITA_MIN,
     precoCentavos: null,
     minimoHoras: null,
     podeExigirEquipe: false,
@@ -101,7 +109,8 @@ export const CATALOGO: Servico[] = [
     nome: 'Organização de ambientes (Personal Organizer)',
     descricao: 'Organização de ambientes da casa. Só é possível orçar depois de uma visita técnica.',
     formaCobranca: 'visita_tecnica',
-    duracaoEstimadaMin: DURACAO_VISITA_MIN,
+    duracaoEstimadaMin: null,
+    duracaoVisitaMin: DURACAO_VISITA_MIN,
     precoCentavos: null,
     minimoHoras: null,
     podeExigirEquipe: false,
@@ -116,7 +125,8 @@ export const CATALOGO: Servico[] = [
     // a categoria. Por decisão do Rafael (12/11/2026), fica como visita técnica até
     // ela confirmar; a seção 7.3 do formulário de configuração resolve isso. Sem preço inventado.
     formaCobranca: 'visita_tecnica',
-    duracaoEstimadaMin: DURACAO_VISITA_MIN,
+    duracaoEstimadaMin: null,
+    duracaoVisitaMin: DURACAO_VISITA_MIN,
     precoCentavos: null,
     minimoHoras: null,
     podeExigirEquipe: false,
@@ -129,7 +139,8 @@ export const CATALOGO: Servico[] = [
     descricao:
       'R$ 70,00 por hora, mínimo de 4 horas. Exclusivo para ambientes pequenos, mediante avaliação da demanda.',
     formaCobranca: 'hora',
-    duracaoEstimadaMin: 240, // o mínimo vendido: 4 horas
+    duracaoEstimadaMin: null,
+    duracaoVisitaMin: null,
     precoCentavos: 7000,
     minimoHoras: 4,
     podeExigirEquipe: false,

@@ -1,7 +1,7 @@
 export default function Home() {
   return (
     <main className="flex flex-1 items-center justify-center p-8">
-      <h1 className="text-2xl font-semibold">Alana Rosa — Limpeza de Alto Padrão</h1>
+      <h1 className="text-2xl font-semibold">Allana Rosa — Limpeza Profissional de Alto Padrão</h1>
     </main>
   )
 }

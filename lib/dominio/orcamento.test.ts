@@ -13,6 +13,7 @@ function servico(
     descricao: 'Descrição de teste',
     formaCobranca,
     duracaoEstimadaMin: 120,
+    duracaoVisitaMin: null,
     precoCentavos,
     minimoHoras: null,
     podeExigirEquipe: false,
@@ -40,9 +41,18 @@ function como<T extends Orcamento['tipo']>(r: Orcamento, tipo: T) {
 
 // ---- Catálogo real (seção 14) ----
 
-test('não existe mais cobrança por metro quadrado', () => {
-  expect(CATALOGO.every((s) => (s.formaCobranca as string) !== 'm2')).toBe(true)
-  expect(CATALOGO.every((s) => (s.formaCobranca as string) !== 'sob_orcamento')).toBe(true)
+test('catálogo carregado de fora (banco) não traz formas de cobrança extintas', () => {
+  // Guarda para o catálogo vindo do banco, onde a forma chega como string sem checagem.
+  const formas = (CATALOGO as unknown as { formaCobranca: string }[]).map((s) => s.formaCobranca)
+  expect(formas).not.toContain('m2')
+  expect(formas).not.toContain('sob_orcamento')
+})
+
+test('forma de cobrança desconhecida (vinda do banco) nunca devolve número', () => {
+  const s = servico('hora', 5000, { formaCobranca: 'm2' as unknown as 'hora' })
+  const r = orcar(s, { horas: 4, diarias: 1 })
+  expect(r).not.toHaveProperty('valor')
+  expect(JSON.stringify(r)).not.toMatch(/\d{3,}/)
 })
 
 test('diária de manutenção custa R$ 500,00 e dura 8 horas', () => {
@@ -65,6 +75,27 @@ test.each([
   expect(s.precoCentavos).toBe(centavos)
   expect(s.formaCobranca).toBe('diaria')
   expect(s.duracaoEstimadaMin).toBe(480)
+  expect(orcar(s, { diarias: 1 })).toMatchObject({ tipo: 'fechado', valor: centavos })
+})
+
+test('diária sem quantidade informada vale uma diária', () => {
+  expect(orcar(servicoDoCatalogo('residencial-manutencao'), {})).toEqual({
+    tipo: 'fechado',
+    valor: 50000,
+    detalhe: '1 diária × R$ 500,00',
+  })
+})
+
+test('duração do serviço e duração da visita são coisas distintas', () => {
+  for (const id of ['pos-obra', 'personal-organizer', 'revitalizacao-piso']) {
+    const s = servicoDoCatalogo(id)
+    expect(s.duracaoEstimadaMin).toBeNull()
+    expect(s.duracaoVisitaMin).toBe(60)
+  }
+  for (const id of ['vidros', 'comercial', 'pacote-horas']) {
+    expect(servicoDoCatalogo(id).duracaoEstimadaMin).toBeNull()
+    expect(servicoDoCatalogo(id).duracaoVisitaMin).toBeNull()
+  }
 })
 
 test('pacote de horas abaixo do mínimo não devolve valor, e diz o mínimo', () => {
@@ -82,10 +113,12 @@ test('pacote de horas no mínimo exato vale R$ 280,00', () => {
   expect(servicoPacoteHoras().minimoHoras).toBe(4)
 })
 
-test('pacote de horas acima de 8 horas não fecha: é caso de diária ou equipe', () => {
+test('pacote de horas acima de 8 horas não fecha e não cita preço', () => {
   const r = orcar(servicoPacoteHoras(), { horas: 10 })
-  expect(r.tipo).toBe('avaliacao')
+  expect(r).toEqual({ tipo: 'acima_do_pacote', maximoHoras: 8, mensagem: expect.any(String) })
   expect(r).not.toHaveProperty('valor')
+  expect(como(r, 'acima_do_pacote').mensagem).toMatch(/diária/)
+  expect(JSON.stringify(r)).not.toMatch(/R\$|\d{3,}/)
   expect(orcar(servicoPacoteHoras(), { horas: 8 })).toMatchObject({ tipo: 'fechado', valor: 56000 })
 })
 
@@ -152,7 +185,7 @@ test('serviço por diária multiplica pelo número de diárias', () => {
 test('metragem nunca entra na conta', () => {
   const r = orcar(servicoPorHora(5000), { horas: 2, metrosQuadrados: 300 } as never)
   expect(r).toMatchObject({ tipo: 'fechado', valor: 10000 })
-  expect(orcar(servicoPorHora(5000), { metrosQuadrados: 300 } as never).tipo).toBe('avaliacao')
+  expect(orcar(servicoPorHora(5000), { metrosQuadrados: 300 } as never).tipo).toBe('falta_medida')
 })
 
 test('avaliação nunca devolve número, mesmo com preço cadastrado por engano', () => {
@@ -179,8 +212,9 @@ test('avaliação sem perguntas cadastradas ainda pergunta o essencial', () => {
   expect(r.perguntas.length).toBeGreaterThan(0)
 })
 
-test('medida ausente para a forma de cobrança não devolve número', () => {
-  const r = como(orcar(servicoPorDiaria(35000), {}), 'avaliacao')
+test('horas ausentes não devolvem número: faltam medidas, não é avaliação', () => {
+  const r = como(orcar(servicoPorHora(5000), {}), 'falta_medida')
+  expect(r.perguntas.length).toBeGreaterThan(0)
   expect(r).not.toHaveProperty('valor')
   expect(JSON.stringify(r)).not.toMatch(/\d{3,}/)
 })
@@ -190,9 +224,10 @@ test('medida zero, negativa ou inválida não devolve número', () => {
     orcar(servicoPorHora(5000), { horas: 0 }),
     orcar(servicoPorHora(5000), { horas: -2 }),
     orcar(servicoPorHora(5000), { horas: NaN }),
+    orcar(servicoPorDiaria(35000), { diarias: 0 }),
     orcar(servicoPorDiaria(35000), { diarias: Infinity }),
   ]) {
-    expect(r.tipo).toBe('avaliacao')
+    expect(r.tipo).toBe('falta_medida')
     expect(r).not.toHaveProperty('valor')
   }
 })
@@ -200,7 +235,7 @@ test('medida zero, negativa ou inválida não devolve número', () => {
 test('só a medida exigida pela forma de cobrança conta', () => {
   const r = orcar(servicoPorHora(5000), { horas: 2, diarias: 9 })
   expect(r).toMatchObject({ tipo: 'fechado', valor: 10000 })
-  expect(orcar(servicoPorHora(5000), { diarias: 9 }).tipo).toBe('avaliacao')
+  expect(orcar(servicoPorHora(5000), { diarias: 9 }).tipo).toBe('falta_medida')
 })
 
 test('serviço com preço cobrável mas sem preço cadastrado não inventa valor', () => {
@@ -220,13 +255,13 @@ test('quantidade fracionária usa vírgula decimal no detalhe', () => {
 
 test('medida minúscula que arredonda para zero não orça como grátis', () => {
   const r = orcar(servicoPorHora(5000), { horas: 0.00001 })
-  expect(r.tipo).toBe('avaliacao')
+  expect(r.tipo).toBe('falta_medida')
   expect(r).not.toHaveProperty('valor')
 })
 
 test('medida absurda não vira valor', () => {
-  expect(orcar(servicoPorHora(5000), { horas: 1e21 }).tipo).toBe('avaliacao')
-  expect(orcar(servicoPorDiaria(35000), { diarias: 1e21 }).tipo).toBe('avaliacao')
+  expect(orcar(servicoPorHora(5000), { horas: 1e21 }).tipo).toBe('acima_do_pacote')
+  expect(orcar(servicoPorDiaria(35000), { diarias: 1e21 }).tipo).toBe('falta_medida')
 })
 
 test('mínimo de horas abaixo do mínimo cita a quantidade com vírgula decimal', () => {
@@ -239,6 +274,9 @@ test('as saídas sem valor são congeladas', () => {
   const av = como(orcar(servicoDoCatalogo('vidros'), {}), 'avaliacao')
   expect(Object.isFrozen(av)).toBe(true)
   expect(Object.isFrozen(av.perguntas)).toBe(true)
-  expect(Object.isFrozen(orcar(servicoPorHora(5000), { horas: 0 }))).toBe(true)
+  const fm = como(orcar(servicoPorHora(5000), { horas: 0 }), 'falta_medida')
+  expect(Object.isFrozen(fm)).toBe(true)
+  expect(Object.isFrozen(fm.perguntas)).toBe(true)
+  expect(Object.isFrozen(orcar(servicoPorHora(5000), { horas: 10 }))).toBe(true)
   expect(Object.isFrozen(orcar(servicoPacoteHoras(), { horas: 2 }))).toBe(true)
 })

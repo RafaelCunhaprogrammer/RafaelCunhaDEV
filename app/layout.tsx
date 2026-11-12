@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Alana Rosa — Limpeza de Alto Padrão",
+  title: "Allana Rosa — Limpeza Profissional de Alto Padrão",
   description: "Limpeza de alto padrão em Florianópolis.",
   robots: { index: false, follow: false },
 };
