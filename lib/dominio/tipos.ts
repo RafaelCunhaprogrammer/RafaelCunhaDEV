@@ -11,6 +11,14 @@ export type Centavos = number
  * Não existe cobrança por metro quadrado.
  */
 export type FormaCobranca = 'diaria' | 'hora' | 'avaliacao' | 'visita_tecnica'
+
+/**
+ * Grau de sujeira do imóvel, nas palavras dela: "manutenção em dia ou acumulada?"
+ * (pergunta de avaliação do catálogo). Entra no cálculo de quando o serviço pode
+ * exigir equipe, porque o mesmo imóvel acumulado leva perto do dobro do tempo.
+ */
+export type GrauSujidade = 'manutencao' | 'acumulada'
+
 export type StatusAgendamento =
   | 'aguardando_ela'
   | 'confirmado'
@@ -109,8 +117,26 @@ export type Bloqueio = {
 export type Regras = {
   deslocamentoMin: number // padrão 30
   antecedenciaMinHoras: number // padrão 24
+  /**
+   * Teto de carga (regra 5.6) em número de serviços **e** em horas, por dia e por
+   * semana. Contar serviços não basta: com diárias de 8 horas, dois serviços num
+   * dia são 16 horas de trabalho, que é impossível (seção 14.3, item 5). Para
+   * diárias quem prende é sempre o teto de horas; o de serviços só prende em dias
+   * com vários pedidos curtos do pacote de horas.
+   */
   maxServicosDia: number // padrão 2
+  maxHorasDia: number // padrão 8 — uma diária por dia
+  maxServicosSemana: number // padrão 6
   maxHorasSemana: number // padrão 30
+  /**
+   * Até quantos metros quadrados uma pessoa dá conta numa diária de 8 horas.
+   * Acima disso o serviço pode exigir equipe e orçamento ajustado (seção 14.3,
+   * item 4), e quem decide é ela. Sujeira acumulada tem limite próprio, porque o
+   * mesmo imóvel leva perto do dobro do tempo — dois números explícitos em vez de
+   * um fator escondido.
+   */
+  m2MaximoDiaManutencao: number // padrão 150
+  m2MaximoDiaAcumulada: number // padrão 80
   bairrosAtendidos: string[]
   podeFecharComClienteNovo: boolean // nasce false — coleira curta
   prazoRespostaHoras: number // padrão 2
@@ -122,7 +148,11 @@ export const REGRAS_PADRAO: Regras = {
   deslocamentoMin: 30,
   antecedenciaMinHoras: 24,
   maxServicosDia: 2,
+  maxHorasDia: 8,
+  maxServicosSemana: 6,
   maxHorasSemana: 30,
+  m2MaximoDiaManutencao: 150,
+  m2MaximoDiaAcumulada: 80,
   bairrosAtendidos: [],
   podeFecharComClienteNovo: false,
   prazoRespostaHoras: 2,

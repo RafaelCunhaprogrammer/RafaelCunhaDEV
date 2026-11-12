@@ -209,6 +209,39 @@ test('agendamento confirmado remove o horário, com o deslocamento', () => {
   expect(inicios).toContain('12:30')
 })
 
+test('endereço informado não cobra deslocamento contra o mesmo endereço', () => {
+  const confirmados = [intervalo('2026-11-12T13:00', '2026-11-12T15:00', ENDERECO_A)]
+  const livres = horariosLivres({ ...base, duracaoMin: 60, confirmados, endereco: ENDERECO_A })
+
+  const inicios = livres.map((b) => horaMinutoLocal(b.inicio))
+  // o confirmado ocupa 10:00-12:00 locais, no mesmo endereço: encostar nele vale
+  expect(inicios).toContain('09:00')
+  expect(inicios).toContain('12:00')
+  expect(inicios).not.toContain('10:30') // dentro do confirmado, mesmo endereço ou não
+})
+
+test('endereço informado diferente do confirmado mantém o deslocamento', () => {
+  const confirmados = [intervalo('2026-11-12T13:00', '2026-11-12T15:00', ENDERECO_A)]
+  const livres = horariosLivres({ ...base, duracaoMin: 60, confirmados, endereco: ENDERECO_B })
+
+  const inicios = livres.map((b) => horaMinutoLocal(b.inicio))
+  expect(inicios).not.toContain('09:00')
+  expect(inicios).not.toContain('12:00')
+  expect(inicios).toContain('12:30')
+})
+
+test('sem endereço o comportamento é o de antes: deslocamento sempre exigido', () => {
+  const confirmados = [intervalo('2026-11-12T13:00', '2026-11-12T15:00', ENDERECO_A)]
+  const comEndereco = horariosLivres({
+    ...base,
+    duracaoMin: 60,
+    confirmados,
+    endereco: ENDERECO_B,
+  })
+  const semEndereco = horariosLivres({ ...base, duracaoMin: 60, confirmados })
+  expect(semEndereco).toEqual(comEndereco)
+})
+
 test('antecedência mínima remove os blocos próximos demais', () => {
   // agora 11:00 locais de quarta; com 24h de antecedência, o primeiro bloco
   // possível na quinta é 11:00 locais

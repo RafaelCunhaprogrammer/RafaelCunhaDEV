@@ -72,10 +72,12 @@ export function conflita(
  *
  * Dia sem faixa cadastrada devolve lista vazia — ausência de expediente não é erro.
  *
- * O endereço do candidato é desconhecido aqui (quem pede ainda está escolhendo
- * o horário), então o deslocamento é sempre exigido contra os confirmados. Errar
- * para o lado de oferecer menos é o lado seguro: o outro lado é chegar numa casa
- * onde ela já está marcada em outra.
+ * `endereco` é opcional porque quem pede pode ainda estar escolhendo o horário.
+ * Omitido, o endereço do candidato é tratado como desconhecido e o deslocamento é
+ * sempre exigido contra os confirmados: errar para o lado de oferecer menos é o
+ * lado seguro, porque o outro lado é chegar numa casa onde ela já está marcada em
+ * outra. Informado, o deslocamento não é cobrado contra um agendamento no mesmo
+ * endereço — dois serviços no mesmo prédio não exigem atravessar a cidade.
  */
 export function horariosLivres(params: {
   dia: Date
@@ -86,6 +88,7 @@ export function horariosLivres(params: {
   deslocamentoMin: number
   antecedenciaMinHoras: number
   agora: Date
+  endereco?: string
 }): Intervalo[] {
   const {
     dia,
@@ -96,6 +99,7 @@ export function horariosLivres(params: {
     deslocamentoMin,
     antecedenciaMinHoras,
     agora,
+    endereco,
   } = params
 
   if (!Number.isFinite(duracaoMin) || duracaoMin <= 0) return []
@@ -124,7 +128,7 @@ export function horariosLivres(params: {
       if (bloco.fim.getTime() > fimDaFaixa.getTime()) continue
       if (bloco.inicio.getTime() < primeiroInicioPermitido) continue
       if (bloqueios.some((bloqueio) => sobrepoe(bloco, bloqueio, 0))) continue
-      if (conflitaComEndereco(bloco, null, confirmados, deslocamentoMin)) continue
+      if (conflitaComEndereco(bloco, endereco ?? null, confirmados, deslocamentoMin)) continue
 
       livres.push(bloco)
     }
